@@ -1,0 +1,70 @@
+// @dart=3.0
+// coverage:ignore-file
+// GENERATED CODE - DO NOT MODIFY BY HAND
+// ignore_for_file: type=lint
+// ignore_for_file: unused_local_variable, unused_element, deprecated_member_use, deprecated_member_use_from_same_package, use_function_type_syntax_for_parameters, unnecessary_const, avoid_init_to_null, invalid_override_different_default_values_named, prefer_expression_function_bodies, annotate_overrides, invalid_annotation_target, unnecessary_question_mark
+// ignore_for_file: no_leading_underscores_for_library_prefixes
+import 'package:web3dart/web3dart.dart' as _i1;
+import 'package:wallet/wallet.dart' as _i2;
+import 'dart:typed_data' as _i3;
+
+final _contractAbi = _i1.ContractAbi.fromJson(
+  '[{"inputs":[{"internalType":"address","name":"module","type":"address"}],"name":"enableModule","outputs":[],"stateMutability":"nonpayable","type":"function"},{"inputs":[{"internalType":"address","name":"module","type":"address"},{"internalType":"address","name":"moduleGuard","type":"address"}],"name":"enableModuleWithGuard","outputs":[],"stateMutability":"nonpayable","type":"function"}]',
+  'SafeModuleSetup',
+);
+
+class SafeModuleSetup extends _i1.GeneratedContract {
+  SafeModuleSetup({
+    required _i2.EthereumAddress address,
+    required _i1.Web3Client client,
+    int? chainId,
+  }) : super(
+          _i1.DeployedContract(
+            _contractAbi,
+            address,
+          ),
+          client,
+          chainId,
+        );
+
+  /// The optional [transaction] parameter can be used to override parameters
+  /// like the gas price, nonce and max gas. The `data` and `to` fields will be
+  /// set by the contract.
+  Future<String> enableModule(
+    ({_i2.EthereumAddress module}) args, {
+    required _i1.Credentials credentials,
+    _i1.Transaction? transaction,
+  }) async {
+    final function = self.abi.functions[0];
+    assert(checkSignature(function, '610b5925'));
+    final params = [args.module];
+    return write(
+      credentials,
+      transaction,
+      function,
+      params,
+    );
+  }
+
+  /// The optional [transaction] parameter can be used to override parameters
+  /// like the gas price, nonce and max gas. The `data` and `to` fields will be
+  /// set by the contract.
+  Future<String> enableModuleWithGuard(
+    ({_i2.EthereumAddress module, _i2.EthereumAddress moduleGuard}) args, {
+    required _i1.Credentials credentials,
+    _i1.Transaction? transaction,
+  }) async {
+    final function = self.abi.functions[1];
+    assert(checkSignature(function, 'da3f1b38'));
+    final params = [
+      args.module,
+      args.moduleGuard,
+    ];
+    return write(
+      credentials,
+      transaction,
+      function,
+      params,
+    );
+  }
+}
