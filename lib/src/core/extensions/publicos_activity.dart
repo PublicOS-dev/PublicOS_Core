@@ -471,7 +471,6 @@ extension PublicOSActivity on PublicOS {
           key: _lastBlockKey,
           value: block.toString(),
           isSystem: true,
-          expiration: DateTime.now().add(const Duration(days: 3650)),
         ),
       );
     } catch (e) {

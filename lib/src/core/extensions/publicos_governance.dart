@@ -5,6 +5,7 @@ import 'package:web3dart/web3dart.dart';
 import 'package:wallet/wallet.dart';
 import 'package:publicos_core/src/core/publicos_core.dart';
 import 'package:publicos_core/src/core/extensions/publicos_bsp.dart';
+import 'package:publicos_core/src/core/extensions/publicos_accounts.dart';
 import 'package:publicos_core/src/models/record_model.dart';
 import 'package:publicos_core/src/utils/log.dart';
 import 'package:publicos_core/src/utils/string_utils.dart' show bytes32ToString;
@@ -15,26 +16,39 @@ extension PublicOSGovernance on PublicOS {
   static const _tag = 'Orgs';
 
   /// Get voting history for a specific org (last week of data)
-  static Future<List<VoteHistoryItem>> getVotingHistory(String orgAddress) async {
+  /// An org's proposals STARTED in a time window, with everything that happened
+  /// to them since (ballots, run, failure, cancel). The window defaults to the
+  /// last 7 days; the apps page backwards a week at a time ("load more")
+  /// and stop at the org's creation ([getOrgCreatedAt]).
+  /// The window is found by block TIMESTAMP ([blockAtOrAfter]), so a week is a
+  /// week of time even across chain downtime. The nodes keep a log index
+  /// (`LogIndex.Enabled`), so an address+topic query answers over
+  /// any range; without it a node refuses more than 10,000 blocks per call.
+  static Future<List<VoteHistoryItem>> getVotingHistory(
+    String orgAddress, {
+    DateTime? since,
+    DateTime? until,
+  }) async {
 
     try {
       final orgAddr = EthereumAddress.fromHex(orgAddress);
 
-      // Calculate block range for last week (assuming ~2 second blocks)
-      // 604800 seconds in a week / 2 seconds/block = 302400 blocks
-      final currentBlock = await PublicOS.web3Client.getBlockNumber();
-      final fromBlock = (currentBlock - 302400).clamp(0, currentBlock);
+      final head = await PublicOS.web3Client.getBlockNumber();
+      final from = await blockAtOrAfter(since ?? DateTime.now().subtract(const Duration(days: 7)));
+      final to = until == null ? head : (await blockAtOrAfter(until)) - 1;
+      if (from > head || to < from) return [];
 
       // Parallel-votes engine (Governor): every event
       // is keyed by proposal id, so the fold below matches ballots to their
-      // proposal exactly. Fetch the six event types in parallel.
+      // proposal exactly. Starts come from the window; what happened to them
+      // can come later, so the other five read from the window's start to head.
       final results = await Future.wait([
-        _getEngineEvents('VoteStarted', orgAddr, fromBlock, currentBlock),
-        _getEngineEvents('VoteCast', orgAddr, fromBlock, currentBlock),
-        _getEngineEvents('VoteExecuted', orgAddr, fromBlock, currentBlock),
-        _getEngineEvents('VoteFailed', orgAddr, fromBlock, currentBlock),
-        _getEngineEvents('VoteRunFailed', orgAddr, fromBlock, currentBlock),
-        _getEngineEvents('VoteCancelled', orgAddr, fromBlock, currentBlock), // cancel · veto · withdraw
+        _getEngineEvents('VoteStarted', orgAddr, from, to),
+        _getEngineEvents('VoteCast', orgAddr, from, head),
+        _getEngineEvents('VoteExecuted', orgAddr, from, head),
+        _getEngineEvents('VoteFailed', orgAddr, from, head),
+        _getEngineEvents('VoteRunFailed', orgAddr, from, head),
+        _getEngineEvents('VoteCancelled', orgAddr, from, head), // vote_cancel
       ]);
 
       if (results[0].isEmpty) return [];
@@ -53,6 +67,52 @@ extension PublicOSGovernance on PublicOS {
       return [];
     }
   }
+
+  static final Map<int, int> _blockSeconds = {};
+
+  static Future<int> _blockTs(int n) async {
+    final cached = _blockSeconds[n];
+    if (cached != null) return cached;
+    final b = await PublicOS.web3Client.getBlockInformation(blockNumber: '0x${n.toRadixString(16)}');
+    final s = b.timestamp.millisecondsSinceEpoch ~/ 1000;
+    _blockSeconds[n] = s;
+    return s;
+  }
+
+  /// The first block whose timestamp is at or after [t] (head + 1 when none is).
+  /// AuRa seals at most one block per 2-second step, so `head - (headTs - t) / 2`
+  /// is a lower bound; downtime only pushes the answer up from there. Gallop up
+  /// from that bound, then binary-search: a few calls on a healthy chain.
+  static Future<int> blockAtOrAfter(DateTime t) async {
+    final head = await PublicOS.web3Client.getBlockNumber();
+    final target = t.millisecondsSinceEpoch ~/ 1000;
+    final headTs = await _blockTs(head);
+    if (headTs < target) return head + 1;
+    var lo = (head - (headTs - target) ~/ 2).clamp(0, head);
+    if (await _blockTs(lo) >= target) return lo;
+    var step = 1;
+    var hi = lo + step;
+    while (hi < head && await _blockTs(hi) < target) {
+      lo = hi;
+      step *= 2;
+      hi = (lo + step).clamp(0, head);
+    }
+    // ts(lo) < target <= ts(hi)
+    while (hi - lo > 1) {
+      final mid = (lo + hi) >> 1;
+      if (await _blockTs(mid) < target) {
+        lo = mid;
+      } else {
+        hi = mid;
+      }
+    }
+    return hi;
+  }
+
+  /// When [orgAddress] was created (its `OrgCreated` event), or null when it
+  /// cannot be read. The vote history pages back to here and no further.
+  static Future<DateTime?> getOrgCreatedAt(String orgAddress) =>
+      PublicOSAccounts.getAccountCreatedAt(EthereumAddress.fromHex(orgAddress), isOrg: true);
 
   // ── Parallel votes (Governor). The engine is keyed by PROPOSAL ID: an org may
   //    have up to `orgMaxOpen` proposals open at once, `startVote` returns an id,
@@ -2094,7 +2154,7 @@ extension PublicOSGovernance on PublicOS {
       final values = [for (final r in records) r.toChainJson()];
       final expirations = [
         for (final r in records)
-          BigInt.from(r.expiration.millisecondsSinceEpoch)
+          r.chainExpiration
       ];
       final recordTypes = [for (final r in records) BigInt.from(r.type.index)];
       final customTypes = [for (final r in records) r.subtype ?? ''];

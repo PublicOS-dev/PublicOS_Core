@@ -987,6 +987,43 @@ extension PublicOSKeychain on PublicOS {
     }
   }
 
+  /// Re-read every key's inbox from the XMTP network and re-stamp the ones
+  /// that moved. A key's inbox changes when it is added to another inbox
+  /// (addAccount with reassign, e.g. scanned from this key's QR on another
+  /// phone); the stamp written at first activation would otherwise keep
+  /// naming the old inbox. Only keys already activated here (stamped) and
+  /// actually on the network are touched: on Android/iOS the lookup
+  /// COMPUTES an id for an unregistered address, so it is never trusted
+  /// alone. Needs a loaded client; returns the labels whose inbox changed
+  /// (empty when nothing moved or no client is loaded).
+  static Future<List<String>> refreshInboxStamps(String userAddress) async {
+    final client = PublicOS.xmtpClient;
+    if (client == null) return const [];
+    final changed = <String>[];
+    for (final label in await getKeyIndex(userAddress)) {
+      try {
+        final stamped = await _storedInboxId(userAddress, label);
+        if (stamped == null || !RegExp(r'^[0-9a-fA-F]{64}$').hasMatch(stamped)) {
+          continue;
+        }
+        final privateKeyHex = await exportPrivateKey(userAddress, label);
+        if (privateKeyHex == null) continue;
+        final address = EthPrivateKey.fromHex(privateKeyHex).address.eip55With0x;
+        if (!await client.canMessageByAddress(address)) continue;
+        final live = (await client.inboxIdFromAddress(address))?.toLowerCase();
+        if (live == null || live.isEmpty || live == stamped.toLowerCase()) {
+          continue;
+        }
+        await _mergeMetadata(userAddress, label, {'inboxId': live});
+        changed.add(label);
+        Log.i(_tag, 'Key "$label" moved inbox: re-stamped');
+      } catch (e) {
+        Log.e(_tag, 'refreshInboxStamps("$label"): $e');
+      }
+    }
+    return changed;
+  }
+
   /// Merge fields into a key's stored metadata (e.g. stamp the real inboxId
   /// once the client has been created for the first time).
   static Future<void> _mergeMetadata(
@@ -1071,10 +1108,14 @@ extension PublicOSKeychain on PublicOS {
       // the existing database — no new installation is registered).
       await PublicOS.reinitializeXmtpClientWithKeys(privateKey, label, existingDbKey: dbKey);
 
-      // Stamp the real inboxId the first time we learn it.
-      if (await _storedInboxId(userAddress, label) == null &&
-          PublicOS.clientXmtpInboxId != null) {
-        await _mergeMetadata(userAddress, label, {'inboxId': PublicOS.clientXmtpInboxId});
+      // Stamp the real inboxId whenever it differs from the stored one, not
+      // only the first time: a key added to ANOTHER inbox (addAccount with
+      // reassign, e.g. the QR key handoff) now resolves to that inbox, and a
+      // stale stamp makes [xmtpSetupStatusFor] check the old inbox's
+      // database on the next activation.
+      final live = PublicOS.clientXmtpInboxId;
+      if (live != null && await _storedInboxId(userAddress, label) != live) {
+        await _mergeMetadata(userAddress, label, {'inboxId': live});
       }
 
       await setXmtpSelectedKey(userAddress, label);

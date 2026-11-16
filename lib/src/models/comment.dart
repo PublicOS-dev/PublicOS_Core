@@ -79,6 +79,25 @@ class CommentReaction {
   }
 }
 
+/// The post's author's own reaction on a comment: the first emoji they
+/// added, and who they are (`post_author_reaction` on every comment the
+/// server answers, absent when the author has not reacted). Lets a client show
+/// "the author reacted" beside the comment's time.
+class CommentAuthorReaction {
+  final String address;
+  final String emoji;
+
+  const CommentAuthorReaction({required this.address, required this.emoji});
+
+  static CommentAuthorReaction? fromJson(Object? json) {
+    if (json is! Map<String, dynamic>) return null;
+    final address = json['address'] as String? ?? '';
+    final emoji = json['emoji'] as String? ?? '';
+    if (address.isEmpty || emoji.isEmpty) return null;
+    return CommentAuthorReaction(address: address, emoji: emoji);
+  }
+}
+
 class Comment {
   final String uid;
   final String accountAddress;
@@ -114,6 +133,9 @@ class Comment {
   final List<CommentReaction> reactions;
   final List<String> userReactionEmojis;
 
+  /// The post's author's reaction on this comment, null when they have none.
+  final CommentAuthorReaction? postAuthorReaction;
+
   Comment({
     required this.uid,
     required this.accountAddress,
@@ -137,6 +159,7 @@ class Comment {
     this.isDeleted = false,
     this.reactions = const [],
     this.userReactionEmojis = const [],
+    this.postAuthorReaction,
   });
 
   factory Comment.fromJson(Map<String, dynamic> json) {
@@ -173,6 +196,8 @@ class Comment {
       userReactionEmojis: (json['user_reaction_emojis'] as List<dynamic>?)
           ?.map((e) => e as String)
           .toList() ?? const [],
+      postAuthorReaction:
+          CommentAuthorReaction.fromJson(json['post_author_reaction']),
     );
   }
 
@@ -225,6 +250,7 @@ class Comment {
     bool? isDeleted,
     List<CommentReaction>? reactions,
     List<String>? userReactionEmojis,
+    CommentAuthorReaction? postAuthorReaction,
   }) {
     return Comment(
       uid: uid ?? this.uid,
@@ -249,6 +275,7 @@ class Comment {
       isDeleted: isDeleted ?? this.isDeleted,
       reactions: reactions ?? this.reactions,
       userReactionEmojis: userReactionEmojis ?? this.userReactionEmojis,
+      postAuthorReaction: postAuthorReaction ?? this.postAuthorReaction,
     );
   }
 }

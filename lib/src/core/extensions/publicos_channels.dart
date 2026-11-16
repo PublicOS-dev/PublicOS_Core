@@ -1829,6 +1829,45 @@ extension PublicOSChannels on PublicOS {
     return '$commentsUrl/${comment.uid}/reactions';
   }
 
+  /// Fetch who reacted to a comment (`GET …/comments/:uid/reactions`): the
+  /// same shape as a post's answer (`reactions`, `user_reactions`,
+  /// `current_user_reactions`), so it parses as [ReactionsData]; its
+  /// `postUid` is left empty (the server answers `comment_uid`). The twin of
+  /// [getReactions], for the comment reactions sheet.
+  static Future<ReactionsData?> getCommentReactions({
+    required Post post,
+    required Comment comment,
+  }) async {
+    if (!canReact(post) || post.commentsUrl == null) {
+      return null;
+    }
+
+    try {
+      final url = _buildCommentReactionsUrl(post, comment);
+      final wantSigned = await PublicOSChannelSignin.shouldSign(url);
+      final response = wantSigned
+          ? await PublicOSSsp.signedRequestAtUrl(
+              method: 'GET',
+              url: url,
+              action: 'read_feed',
+            )
+          : await http
+              .get(Uri.parse(url))
+              .timeout(PublicOS.serverRequestTimeout);
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body) as Map<String, dynamic>;
+        return ReactionsData.fromJson(data);
+      } else {
+        Log.e(_tag, 'Failed to fetch comment reactions: ${response.statusCode}');
+        return null;
+      }
+    } catch (e) {
+      Log.e(_tag, '$e');
+      rethrow;
+    }
+  }
+
   /// Toggle a reaction on a comment (add if not present, remove if present)
   /// Returns true if added, false if removed
   static Future<bool> toggleCommentReaction({
@@ -3260,6 +3299,90 @@ extension PublicOSChannels on PublicOS {
       ));
     }
     return _trendingList(meta, out);
+  }
+
+  /// Explore's Latest: the network's newest public posts from the user's own
+  /// SSP (`GET /api/stats/latest/feed`), in the list's order. Same document
+  /// of copies as [getTrendingPosts], so each post keeps its canonical URL and
+  /// everything it does goes home; each item's counts come from its own
+  /// interactions call, fetched in parallel batches (a list can hold 100).
+  /// null = nothing filled yet (`{"latest": null}`) or the request failed.
+  /// Reading this list records no read anywhere.
+  static Future<LatestList?> getLatestPosts() async {
+    Map<String, dynamic> body;
+    try {
+      final response = await PublicOSSsp.makeRequest('GET', '/api/stats/latest/feed');
+      if (response.statusCode != 200) {
+        Log.d(_tag, 'latest feed HTTP ${response.statusCode}');
+        return null;
+      }
+      body = jsonDecode(response.body) as Map<String, dynamic>;
+    } catch (e) {
+      Log.d(_tag, 'latest feed failed: $e');
+      return null;
+    }
+    final meta = body['latest'];
+    if (meta is! Map<String, dynamic>) return null;
+    final items = body['items'] as List? ?? const [];
+    final entries = meta['entries'] as List? ?? const [];
+
+    final parsed = <({Post post, String base, String owner, String slug, Map entry})>[];
+    for (var i = 0; i < items.length && i < entries.length; i++) {
+      final item = items[i];
+      final entry = entries[i];
+      if (item is! Map<String, dynamic> || entry is! Map) continue;
+      final m = _trendingPostUrl.firstMatch(item['url'] as String? ?? '');
+      if (m == null) continue;
+      final base = m.group(1)!, owner = m.group(2)!, slug = m.group(3)!;
+      parsed.add((
+        post: Post.fromFeedV1Item(
+          item,
+          channelOwnerAddress: owner,
+          channelSlug: slug,
+          serverAddress: base,
+          feedUrl: '$base/api/$owner/channels/$slug/json',
+          feedFoundAtAccountAddress: owner,
+        ),
+        base: base,
+        owner: owner,
+        slug: slug,
+        entry: entry,
+      ));
+    }
+
+    Future<LatestPost> withCounts(
+        ({Post post, String base, String owner, String slug, Map entry}) p) async {
+      var post = p.post;
+      try {
+        final ixUrl = post.interactionsUrl ?? '${post.url}/interactions';
+        final interactions = await RssParser.fetchInteractions(ixUrl,
+            signed: await PublicOSChannelSignin.shouldSign(post.url ?? ixUrl));
+        final mine = interactions?.items[post.uid];
+        if (mine != null) post = mine.applyTo(post);
+      } catch (_) {
+        // No counts: the post still lists.
+      }
+      post = post.withInteractionUrls(
+          baseUrl: p.base, ownerAddress: p.owner, slug: p.slug);
+      return LatestPost(
+        post: post,
+        ssp: p.entry['ssp'] as String? ?? '',
+        receivedAt: DateTime.tryParse(p.entry['received_at'] as String? ?? '')?.toUtc() ??
+            DateTime.fromMillisecondsSinceEpoch(0, isUtc: true),
+      );
+    }
+
+    const batch = 12;
+    final out = <LatestPost>[];
+    for (var i = 0; i < parsed.length; i += batch) {
+      final end = i + batch < parsed.length ? i + batch : parsed.length;
+      out.addAll(await Future.wait(parsed.sublist(i, end).map(withCounts)));
+    }
+    return LatestList(
+      filledAt: DateTime.tryParse(meta['filled_at'] as String? ?? '')?.toUtc() ??
+          DateTime.fromMillisecondsSinceEpoch(0, isUtc: true),
+      items: out,
+    );
   }
 
   /// The trending channels of one window and one list, in rank order. Each

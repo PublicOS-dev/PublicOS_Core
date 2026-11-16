@@ -983,7 +983,6 @@ extension PublicOSAppRegistry on PublicOS {
         key: recentAppsSettingKey,
         value: jsonEncode(rows),
         isSystem: true,
-        expiration: DateTime.now().add(const Duration(days: 3650)),
       );
       return await PublicOSSettings.setSetting(recentAppsSettingKey, record);
     } catch (e) {

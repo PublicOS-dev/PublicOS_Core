@@ -134,7 +134,6 @@ extension PublicOSSettings on PublicOS {
       final record = Record.asSettings(
         key: feedsAutoSigninKey,
         value: on ? 'on' : 'off',
-        expiration: DateTime.now().add(const Duration(days: 3650)),
         isExpired: false,
         isSystem: true,
       );
@@ -170,7 +169,6 @@ extension PublicOSSettings on PublicOS {
       final record = Record.asSettings(
         key: 'post_mode',
         value: mode,
-        expiration: DateTime.now().add(const Duration(days: 365)),
         isExpired: false,
         isSystem: true,
       );
@@ -206,7 +204,6 @@ extension PublicOSSettings on PublicOS {
       final record = Record.asSettings(
         key: 'live_notifications',
         value: enabled.toString(),
-        expiration: DateTime.now().add(const Duration(days: 365)),
         isExpired: false,
         isSystem: true,
       );
@@ -279,7 +276,6 @@ extension PublicOSSettings on PublicOS {
       final record = Record.asSettings(
         key: 'module_polling_minutes',
         value: minutes.toString(),
-        expiration: DateTime.now().add(const Duration(days: 365)),
         isExpired: false,
         isSystem: true,
       );
@@ -324,7 +320,6 @@ extension PublicOSSettings on PublicOS {
       final record = Record.asSettings(
         key: 'video_autoload_threshold_mb',
         value: mb.toString(),
-        expiration: DateTime.now().add(const Duration(days: 365)),
         isExpired: false,
         isSystem: true,
       );
@@ -354,7 +349,6 @@ extension PublicOSSettings on PublicOS {
       final record = Record.asSettings(
         key: 'video_autoplay_in_feed',
         value: enabled.toString(),
-        expiration: DateTime.now().add(const Duration(days: 365)),
         isExpired: false,
         isSystem: true,
       );
@@ -390,7 +384,6 @@ extension PublicOSSettings on PublicOS {
       final record = Record.asSettings(
         key: 'push_notifications',
         value: enabled.toString(),
-        expiration: DateTime.now().add(const Duration(days: 365)),
         isExpired: false,
         isSystem: true,
       );
@@ -410,7 +403,6 @@ extension PublicOSSettings on PublicOS {
       final record = Record.asSettings(
         key: 'chain_notifications',
         value: enabled.toString(),
-        expiration: DateTime.now().add(const Duration(days: 365)),
         isExpired: false,
         isSystem: true,
       );
@@ -455,7 +447,6 @@ extension PublicOSSettings on PublicOS {
       final record = Record.asSettings(
         key: 'social_notifications',
         value: enabled.toString(),
-        expiration: DateTime.now().add(const Duration(days: 365)),
         isExpired: false,
         isSystem: true,
       );
@@ -491,7 +482,6 @@ extension PublicOSSettings on PublicOS {
       final record = Record.asSettings(
         key: 'background_notifications',
         value: enabled.toString(),
-        expiration: DateTime.now().add(const Duration(days: 365)),
         isExpired: false,
         isSystem: true,
       );

@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'app_card.dart';
@@ -47,6 +48,46 @@ class Record {
     } else {
       this.metadata['opacity'] = (this.metadata['opacity'] as num).toDouble();
     }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Expiration on chain — Unix SECONDS, 0 = never
+  // ---------------------------------------------------------------------------
+
+  /// "Never expires": the epoch, which goes to the chain as 0. The default for
+  /// every factory: the apps never ask for an expiry, and a profile record
+  /// lives until its owner deletes it. A record that must
+  /// really end passes a date.
+  static final DateTime never = DateTime.fromMillisecondsSinceEpoch(0, isUtc: true);
+
+  /// The last second a date can be read as (9999-12-31T23:59:59Z). A chain
+  /// value beyond it is read as [never]: records written by earlier app builds
+  /// carry MILLISECONDS (the apps converted with `millisecondsSinceEpoch`),
+  /// which the contract, counting seconds, already treats as never expiring.
+  /// Reading them as never lets the next save write 0, so they heal on edit.
+  static const int maxChainSeconds = 253402300799;
+
+  /// The `expiration` argument for `setRecord` / `setMultipleRecords`.
+  BigInt get chainExpiration {
+    final ms = expiration.millisecondsSinceEpoch;
+    return ms <= 0 ? BigInt.zero : BigInt.from(ms ~/ 1000);
+  }
+
+  /// A chain `expiration` (seconds) as a date; 0 and out-of-range values = [never].
+  static DateTime expirationFromChain(BigInt seconds) {
+    if (seconds <= BigInt.zero || seconds > BigInt.from(maxChainSeconds)) return never;
+    return DateTime.fromMillisecondsSinceEpoch(seconds.toInt() * 1000, isUtc: true);
+  }
+
+  /// The key of a channel tab (a router record, subtype `channel`): `channel.<slug>`.
+  /// A record key is at most 31 bytes and a channel slug has no length limit, so
+  /// a slug over 23 is cut to 14 and given 8 hex of its SHA-256 (31 exactly).
+  /// Readers find channel tabs by subtype and URL, never by key.
+  static String channelTabKey(String slug) {
+    final k = 'channel.$slug';
+    if (k.length <= 31) return k;
+    final h = sha256.convert(utf8.encode(slug)).toString().substring(0, 8);
+    return 'channel.${slug.substring(0, 14)}-$h';
   }
 
   // ---------------------------------------------------------------------------
@@ -148,7 +189,7 @@ class Record {
     int? icon,
     Color? color,
     String? link,
-    required DateTime expiration,
+    DateTime? expiration,
     bool isExpired = false,
     bool noTitle = false,
     int width = 1,
@@ -189,7 +230,7 @@ class Record {
     return Record(
       key: key,
       value: value,
-      expiration: expiration,
+      expiration: expiration ?? never,
       type: RecordType.profile,
       isExpired: isExpired,
       profileSubtype: detectedSubtype,
@@ -203,7 +244,7 @@ class Record {
     required String value,
     required bool isSystem,
     dynamic defaultValue,
-    required DateTime expiration,
+    DateTime? expiration,
     bool isExpired = false,
     double opacity = 1.0,
   }) {
@@ -216,7 +257,7 @@ class Record {
     return Record(
       key: key,
       value: value,
-      expiration: expiration,
+      expiration: expiration ?? never,
       type: RecordType.settings,
       isExpired: isExpired,
       metadata: metadataMap,
@@ -227,7 +268,7 @@ class Record {
     required String key,
     required String value,
     required RouterSubtype routerSubtype,
-    required DateTime expiration,
+    DateTime? expiration,
     bool isExpired = false,
     String? name,
     int order = 0,
@@ -245,7 +286,7 @@ class Record {
     return Record(
       key: key,
       value: value,
-      expiration: expiration,
+      expiration: expiration ?? never,
       type: RecordType.router,
       isExpired: isExpired,
       routerSubtype: routerSubtype,
@@ -257,7 +298,7 @@ class Record {
     required String key,
     required String value,
     required Map<String, dynamic> customMetadata,
-    required DateTime expiration,
+    DateTime? expiration,
     bool isExpired = false,
     double opacity = 1.0,
   }) {
@@ -267,7 +308,7 @@ class Record {
     return Record(
       key: key,
       value: value,
-      expiration: expiration,
+      expiration: expiration ?? never,
       type: RecordType.custom,
       isExpired: isExpired,
       metadata: metadataWithOpacity,

@@ -9,7 +9,7 @@ class ProfileTemplates {
 
   /// Get profile records for a given username
   static List<Record> getProfileRecords(String username) {
-    final expirationDate = DateTime.now().add(const Duration(days: 365));
+    final expirationDate = Record.never;
 
     if (username.startsWith("jmsl")) {
       return _getJmslProfile(expirationDate);
@@ -89,14 +89,12 @@ Failing constantly towards my goals""",
         value: "https://jmsl.xyz",
         name: "My site",
         routerSubtype: RouterSubtype.tab,
-        expiration: DateTime.now().add(const Duration(days: 36500)),
       ),
       Record.asRouter(
         key: "tnmt",
         value: "https://thenftmonkeytheorem.io/",
         name: "TnmT",
         routerSubtype: RouterSubtype.tab,
-        expiration: DateTime.now().add(const Duration(days: 36500)),
       ),
     ];
   }
@@ -161,14 +159,12 @@ Failing constantly towards my goals""",
         value: "https://peterszera.com",
         name: "My Work",
         routerSubtype: RouterSubtype.tab,
-        expiration: DateTime.now().add(const Duration(days: 36500)),
       ),
       Record.asRouter(
         key: "contact",
         value: "https://peterszera.com/",
         name: "Get In Touch",
         routerSubtype: RouterSubtype.tab,
-        expiration: DateTime.now().add(const Duration(days: 36500)),
       ),
     ];
   }

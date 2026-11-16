@@ -633,7 +633,6 @@ extension PublicOSTreasury on PublicOS {
           key: seenPingSettingKey,
           value: day.toString(),
           isSystem: true,
-          expiration: DateTime.now().add(const Duration(days: 3650)),
         ),
       );
       Log.i(_tag, 'seen ping stored for UTC day $day');

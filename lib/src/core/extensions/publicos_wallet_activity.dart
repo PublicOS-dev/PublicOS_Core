@@ -457,7 +457,6 @@ extension PublicOSWalletActivity on PublicOS {
           key: key,
           value: block.toString(),
           isSystem: true,
-          expiration: DateTime.now().add(const Duration(days: 3650)),
         ),
       );
     } catch (e) {

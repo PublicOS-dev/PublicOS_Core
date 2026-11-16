@@ -81,7 +81,6 @@ extension PublicOSContacts on PublicOS {
     return Record.asProfile(
       key: 'profile.color',
       value: color.toARGB32().toString(),
-      expiration: DateTime.now().add(const Duration(days: 365 * 100)),
     );
   }
 
@@ -222,7 +221,6 @@ extension PublicOSContacts on PublicOS {
       records.add(Record.asProfile(
         key: 'profile.avatar',
         value: groupImageUrl,
-        expiration: DateTime.now().add(const Duration(days: 365 * 100)),
       ));
     }
     final refreshed = existing.copyWith(
@@ -1142,7 +1140,6 @@ extension PublicOSContacts on PublicOS {
               key: 'xmtp_sessions_resolve_after',
               value: DateTime.now().add(const Duration(hours: 1)).toIso8601String(),
               isSystem: true,
-              expiration: DateTime.now().add(const Duration(days: 365)),
             ),
           ],
         );
@@ -1274,7 +1271,6 @@ extension PublicOSContacts on PublicOS {
           key: 'xmtp_sessions_resolve_after',
           value: DateTime.now().add(const Duration(hours: 1)).toIso8601String(),
           isSystem: true,
-          expiration: DateTime.now().add(const Duration(days: 365)),
         ));
 
       final updated = contact.copyWith(
@@ -1311,7 +1307,6 @@ extension PublicOSContacts on PublicOS {
             key: 'profile.avatar',
             value: ensData['avatar']!,
             isSystem: true,
-            expiration: DateTime.now().add(const Duration(days: 365)),
           ));
           if (ensData['avatar']!.startsWith('eip155:')) {
             final resolved = await resolveNftAvatarUri(ensData['avatar']!);
@@ -1320,7 +1315,6 @@ extension PublicOSContacts on PublicOS {
                 key: 'profile.avatar.resolved',
                 value: resolved,
                 isSystem: true,
-                expiration: DateTime.now().add(const Duration(days: 365)),
               ));
             }
           }
@@ -1332,7 +1326,6 @@ extension PublicOSContacts on PublicOS {
           updatedRecords.add(Record.asProfile(
             key: 'profile.bio',
             value: ensData['bio']!,
-            expiration: DateTime.now().add(const Duration(days: 365)),
             isExpired: false,
             icon: Icons.person_rounded.codePoint,
             customMetadataAttributes: {
@@ -1353,7 +1346,6 @@ extension PublicOSContacts on PublicOS {
           key: 'ens_source',
           value: ensData['source'] ?? 'true',
           isSystem: true,
-          expiration: DateTime.now().add(const Duration(days: 365)),
         ));
 
         // Social records
@@ -1385,7 +1377,6 @@ extension PublicOSContacts on PublicOS {
           updatedRecords.add(Record.asProfile(
             key: recordKey,
             value: cleanValue,
-            expiration: DateTime.now().add(const Duration(days: 365)),
             isExpired: false,
             link: link,
             color: cardColor.withOpacity(.3),
@@ -1401,7 +1392,6 @@ extension PublicOSContacts on PublicOS {
           key: 'resolve_after',
           value: DateTime.now().add(const Duration(hours: 24)).toIso8601String(),
           isSystem: true,
-          expiration: DateTime.now().add(const Duration(days: 365)),
         ));
 
         final updated = contact.copyWith(
@@ -1458,7 +1448,6 @@ extension PublicOSContacts on PublicOS {
         key: key,
         value: DateTime.now().add(duration).toIso8601String(),
         isSystem: true,
-        expiration: DateTime.now().add(const Duration(days: 365)),
       ));
     return contact.copyWith(records: updatedRecords);
   }
@@ -3198,7 +3187,7 @@ extension PublicOSContacts on PublicOS {
             target: EthereumAddress.fromHex(PublicOS.myPublicosAddress!),
             key: record.key,
             value: recordValueJson,
-            expiration: BigInt.from(record.expiration.millisecondsSinceEpoch),
+            expiration: record.chainExpiration,
             recordType: BigInt.from(record.type.index),
             customType: subtypeStr,
           ),
@@ -3272,7 +3261,7 @@ extension PublicOSContacts on PublicOS {
       final values = [for (final r in records) r.toChainJson()];
       final expirations = [
         for (final r in records)
-          BigInt.from(r.expiration.millisecondsSinceEpoch)
+          r.chainExpiration
       ];
       final recordTypes = [for (final r in records) BigInt.from(r.type.index)];
       final customTypes = [for (final r in records) r.subtype ?? ''];
@@ -3454,7 +3443,7 @@ extension PublicOSContacts on PublicOS {
       // truth), not the value blob. See [Record.toChainValue].
       return Record.fromJson(jsonDecode(result.value)).copyWith(
         expiration:
-            DateTime.fromMillisecondsSinceEpoch(result.expiration.toInt()),
+            Record.expirationFromChain(result.expiration),
         isExpired: result.expired,
       );
     } catch (e) {
@@ -3536,8 +3525,8 @@ extension PublicOSContacts on PublicOS {
           // Expiration + expiry status come from the contract (the single source
           // of truth), not the value blob. See [Record.toChainValue].
           records.add(Record.fromJson(decodedMap).copyWith(
-            expiration: DateTime.fromMillisecondsSinceEpoch(
-                result.expirations[i].toInt()),
+            expiration: Record.expirationFromChain(
+                result.expirations[i]),
             isExpired: expiredFlags[i] as bool,
           ));
         } catch (e) {

@@ -196,13 +196,11 @@ class Contact {
       Record.asProfile(
         key: 'profile.color',
         value: color.toARGB32().toString(),
-        expiration: DateTime.now().add(const Duration(days: 365 * 100)),
       ),
       if (imageUrl != null && imageUrl.isNotEmpty)
         Record.asProfile(
           key: 'profile.avatar',
           value: imageUrl,
-          expiration: DateTime.now().add(const Duration(days: 365 * 100)),
         ),
     ];
     return Contact(

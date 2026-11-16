@@ -93,3 +93,32 @@ class TrendingList<T> {
     required this.items,
   });
 }
+
+/// Explore's Latest (the feed server's `GET /api/stats/latest/feed`):
+/// the network's newest public posts, each person's first 3 per rolling 24 h,
+/// merged across every SSP every 10 minutes and ordered by 10-minute slot,
+/// newest slot first, the order inside a slot drawn from that round's beacon
+/// block (so the exact second of posting buys nothing). At most 100.
+class LatestPost {
+  final Post post;
+
+  /// Slug of the SSP the post arrived on.
+  final String ssp;
+
+  /// When that SSP received it (its clock, not the author's date).
+  final DateTime receivedAt;
+
+  const LatestPost({
+    required this.post,
+    required this.ssp,
+    required this.receivedAt,
+  });
+}
+
+/// The Latest list as the reader's SSP last filled it.
+class LatestList {
+  final DateTime filledAt;
+  final List<LatestPost> items;
+
+  const LatestList({required this.filledAt, required this.items});
+}

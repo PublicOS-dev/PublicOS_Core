@@ -1,36 +1,23 @@
-// Regression tests for the record-expiration single-source-of-truth fix.
+// Record expiration on chain: Unix SECONDS, 0 = never.
 //
-// Bug: a record's expiration was duplicated into the on-chain value blob AND
-// carried in the contract's `expiration` argument. Writers disagreed on the
-// blob's unit (Core: ISO/ms, another writer: seconds), and the read path
-// trusted the blob over the arg. A legacy seconds-blob (e.g. 1780000000) was
-// read back as DateTime(1970) whose millisecondsSinceEpoch == 1780000000, then
-// re-sent verbatim on a profile reorder. The contract's
-// `require(expiration > block.timestamp)` (block.timestamp in SECONDS) then
-// reverted once that seconds-date had passed, bricking the whole atomic batch.
-//
-// Fix: the contract `expiration` arg (ms) is the single source of truth. The
-// value blob no longer carries expiration ([Record.toChainValue]); reads apply
-// the arg ([getRecord]/[getAllUserRecords]); [Record.fromJson] no longer parses
-// a blob expiration.
+// The contract argument is the single source of truth for a record's
+// expiration; the value blob carries none. The contract compares it with
+// block.timestamp, so the unit is seconds. Records don't expire: the apps write
+// 0. Earlier app builds sent MILLISECONDS, which the chain reads as tens of
+// thousands of years away; those are read as never, so the next save writes 0
+// and they heal.
 import 'package:flutter_test/flutter_test.dart';
 import 'package:publicos_core/src/models/record_model.dart';
 
 void main() {
-  // The contract gate: require(expiration == 0 || expiration > block.timestamp),
-  // with block.timestamp in SECONDS.
-  bool contractAccepts(int expirationArgMs, int blockTimestampSec) =>
-      expirationArgMs == 0 || expirationArgMs > blockTimestampSec;
+  // The contract gate: require(expiration == 0 || expiration > block.timestamp), seconds.
+  bool contractAccepts(BigInt arg, int blockTimestampSec) =>
+      arg == BigInt.zero || arg > BigInt.from(blockTimestampSec);
+  const blockTsSec = 1794873600; // 2026-11-16
 
-  // A realistic chain clock (2026-06-23, unix seconds).
-  const blockTsSec = 1782238602;
-
-  // Mirrors the read path (getRecord / getAllUserRecords): build the Record from
-  // the value blob, then apply the authoritative on-chain expiration arg (ms).
-  Record readFromChain(
-          Map<String, dynamic> blob, int expirationArgMs, bool expired) =>
+  Record readFromChain(Map<String, dynamic> blob, BigInt arg, bool expired) =>
       Record.fromJson(blob).copyWith(
-        expiration: DateTime.fromMillisecondsSinceEpoch(expirationArgMs),
+        expiration: Record.expirationFromChain(arg),
         isExpired: expired,
       );
 
@@ -42,74 +29,77 @@ void main() {
         'type': 0,
         'metadata': {'rank': 'a'},
         'subtype': 'card',
-      }).copyWith(expiration: DateTime.fromMillisecondsSinceEpoch(1813761640424));
-
+      });
       final blob = r.toChainValue();
       expect(blob.containsKey('expiration'), isFalse);
       expect(blob.containsKey('isExpired'), isFalse);
-      expect(blob['key'], 'card.abc');
-      expect(blob['value'], 'https://feeds.publicos.dev/media/x.png');
       expect(blob['subtype'], 'card');
     });
   });
 
-  group('fromJson', () {
-    test('ignores any expiration present in a (legacy) blob', () {
+  group('factories default to never', () {
+    test('a record built without an expiration goes to the chain as 0', () {
+      final r = Record.asProfile(key: 'automated_account', value: 'true');
+      expect(r.expiration, Record.never);
+      expect(r.chainExpiration, BigInt.zero);
+      expect(Record.asSettings(key: 'color', value: '1', isSystem: true).chainExpiration, BigInt.zero);
+      expect(Record.asRouter(key: 'channel.x', value: 'u', routerSubtype: RouterSubtype.channel).chainExpiration, BigInt.zero);
+    });
+
+    test('fromJson ignores any expiration in a legacy blob', () {
       final r = Record.fromJson({
-        'key': 'card.legacy',
-        'value': 'v',
-        'type': 0,
-        'metadata': const <String, dynamic>{},
-        'expiration': 1780000000, // legacy SECONDS — the old poison
-        'subtype': 'card',
+        'key': 'card.legacy', 'value': 'v', 'type': 0,
+        'metadata': const <String, dynamic>{}, 'expiration': 1780000000, 'subtype': 'card',
       });
-      // The blob value does not leak through; expiration is the epoch sentinel
-      // until the read path applies the authoritative contract arg.
       expect(r.expiration.millisecondsSinceEpoch, 0);
     });
   });
 
-  group('reorder bake survives legacy seconds records', () {
-    test('read applies the ms arg; the re-baked arg passes the contract', () {
-      // On-chain state of a manager-written card: SECONDS in the blob, MS in the
-      // authoritative arg.
-      final blob = {
-        'key': 'card.33445b8b',
-        'value': '@assistant',
-        'type': 0,
-        'metadata': {'rank': 'a'},
-        'expiration': 1780000000, // seconds (drift-prone duplicate)
-        'subtype': 'card',
-      };
-      const onChainArgMs = 1780000000000; // authoritative ms arg
-
-      final r = readFromChain(blob, onChainArgMs, false);
-      // The read used the arg, not the blob.
-      expect(r.expiration.millisecondsSinceEpoch, onChainArgMs);
-
-      // The reorder bake re-sends millisecondsSinceEpoch; the contract accepts it.
-      final reBakedArg = r.expiration.millisecondsSinceEpoch;
-      expect(contractAccepts(reBakedArg, blockTsSec), isTrue);
-
-      // Guard the exact regression: the OLD path re-sent the seconds number,
-      // which the contract rejects once that date has passed.
-      expect(contractAccepts(1780000000, blockTsSec), isFalse);
+  group('seconds on the chain', () {
+    test('a real date round-trips in seconds and passes the contract', () {
+      final when = DateTime.utc(2027, 1, 1);
+      final r = Record.asProfile(key: 'profile.status', value: 'away', expiration: when);
+      expect(r.chainExpiration, BigInt.from(when.millisecondsSinceEpoch ~/ 1000));
+      expect(contractAccepts(r.chainExpiration, blockTsSec), isTrue);
+      final back = readFromChain({'key': 'profile.status', 'value': 'away', 'type': 0, 'metadata': {}}, r.chainExpiration, false);
+      expect(back.expiration, when);
     });
 
-    test('expiration arg 0 (never expires) round-trips and is accepted', () {
-      final r = readFromChain(
-        {
-          'key': 'profile.bio',
-          'value': 'hi',
-          'type': 0,
-          'metadata': const <String, dynamic>{},
-        },
-        0,
-        false,
-      );
-      expect(r.expiration.millisecondsSinceEpoch, 0);
-      expect(
-          contractAccepts(r.expiration.millisecondsSinceEpoch, blockTsSec), isTrue);
+    test('0 reads as never and is re-sent as 0', () {
+      final r = readFromChain({'key': 'profile.bio', 'value': 'hi', 'type': 0, 'metadata': {}}, BigInt.zero, false);
+      expect(r.expiration, Record.never);
+      expect(r.chainExpiration, BigInt.zero);
+    });
+
+    test('a legacy MILLISECOND value reads as never, so a re-save writes 0 (heals)', () {
+      final legacy = BigInt.from(1950159338000); // a millisecond value as found on chain
+      final r = readFromChain({'key': 'automated_account', 'value': 'true', 'type': 0, 'metadata': {}}, legacy, false);
+      expect(r.expiration, Record.never);
+      expect(r.chainExpiration, BigInt.zero);
+      expect(contractAccepts(r.chainExpiration, blockTsSec), isTrue);
+    });
+
+    test('the 06-24 regression stays fixed: a re-sent value is never a past seconds date', () {
+      // A ms value that, re-sent as seconds, would be in the past cannot occur: it reads as never.
+      final r = readFromChain({'key': 'card.33445b8b', 'value': '@assistant', 'type': 0, 'metadata': {'rank': 'a'}, 'subtype': 'card'},
+          BigInt.from(1780000000000), false);
+      expect(contractAccepts(r.chainExpiration, blockTsSec), isTrue);
+    });
+  });
+
+  group('channelTabKey', () {
+    test('channel.<slug> when it fits the 31-byte key', () {
+      expect(Record.channelTabKey('margins'), 'channel.margins');
+      expect(Record.channelTabKey('a' * 23).length, 31);
+      expect(Record.channelTabKey('a' * 23), 'channel.${'a' * 23}');
+    });
+
+    test('a long slug is cut and hashed to exactly 31, stable, and valid for the chain', () {
+      final k = Record.channelTabKey('a-very-long-channel-slug-indeed');
+      expect(k.length, 31);
+      expect(k, Record.channelTabKey('a-very-long-channel-slug-indeed'));
+      expect(RegExp(r'^[a-z0-9_][a-z0-9._-]{0,30}$').hasMatch(k), isTrue);
+      expect(k == Record.channelTabKey('a-very-long-channel-slug-indeee'), isFalse);
     });
   });
 }
