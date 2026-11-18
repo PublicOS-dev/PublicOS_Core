@@ -499,7 +499,11 @@ class RssParser {
     final owner = _nonEmpty(channel['owner']);
     final slug = _nonEmpty(channel['slug']);
     final posting = _nonEmpty(channel['posting']);
-    final bool? isForumChannel = posting == null ? null : posting == 'open';
+    // A forum = more than one author: `open` (anyone who may) and
+    // `approved` (the people on its posters list). Only `owner`
+    // is a single-author feed.
+    final bool? isForumChannel =
+        posting == null ? null : (posting == 'open' || posting == 'approved');
     final title = feedTitle ?? _nonEmpty(channel['title']) ?? 'PublicOS Feed';
     final description = channel['description'] as String? ?? '';
     final icon = _nonEmpty(channel['icon']);

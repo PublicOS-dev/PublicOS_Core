@@ -218,10 +218,8 @@ class Comment {
       base = '${createdAt.year}-${createdAt.month.toString().padLeft(2, '0')}-${createdAt.day.toString().padLeft(2, '0')}';
     }
 
-    if (dateModified != null) {
-      base += ' (edited)';
-    }
-
+    // No "(edited)" here: the apps add their own, localized, from
+    // [dateModified]. Both did, so an edited comment read "(edited) (edited)".
     return base;
   }
 

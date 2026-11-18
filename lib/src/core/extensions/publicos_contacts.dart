@@ -422,6 +422,12 @@ extension PublicOSContacts on PublicOS {
       // work. fetchContact is therefore a writer on (re)compute — consistent
       // with the existing setRecord write-through.
       final prior = await getContact(publicosAccountAddress);
+      // The "Joined" date is never read here (it costs a log scan; the profile
+      // host looks it up for the one contact on screen). Carry the stored one,
+      // so a contact that was opened before never comes back without it.
+      if (prior?.createdAt != null) {
+        contact = contact.copyWith(createdAt: prior!.createdAt);
+      }
       contact = await _resolveMembership(contact, prior, force: forceMembership);
       contact = await _resolveAndVerifyNft(contact, prior);
       contact = await _resolveAndVerifyNftBanner(contact, prior);

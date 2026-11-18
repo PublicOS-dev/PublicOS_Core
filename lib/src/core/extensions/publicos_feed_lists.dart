@@ -85,6 +85,13 @@ class RefreshedFeedList {
   /// media upload door.
   final bool? isPrivate;
 
+  /// Whether THIS reader may post in the channel: the server's per-reader
+  /// answer (`channel.can_post` in the signed interactions call). Single-feed
+  /// path only; null = not asked (unsigned read, external feed, older
+  /// server, multi-feed). Lights the compose button on any channel the
+  /// reader may post in, not only `open` ones.
+  final bool? canPost;
+
   /// The document has a `next_url` — the server has more posts beyond this
   /// page. Single-feed path only; false for external feeds and multi-feed
   /// refreshes. A capability learned from the response, never from the URL.
@@ -115,6 +122,7 @@ class RefreshedFeedList {
     this.stats,
     this.postingPolicy,
     this.isPrivate,
+    this.canPost,
     this.hasMore = false,
     this.channel,
   });
@@ -1289,6 +1297,9 @@ extension PublicOSFeedLists on PublicOS {
         stats: stats,
         postingPolicy: postingPolicy,
         isPrivate: isPrivate,
+        // Per reader and never cached: read off this round trip's
+        // interactions answer, which a 304 carries too.
+        canPost: parsedFeed.canPost ?? parsedFeed.interactions?.canPost,
         hasMore: hasMore,
       );
     } catch (e) {
